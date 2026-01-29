@@ -13,36 +13,16 @@ const isAdmin = (req, res, next) => {
 };
 
 // Admin routes (protected - requires admin role)
-router.get(
-  "/dashboard/stats",
-  auth,
-  isAdmin,
-  adminController.getDashboardStats,
-);
-router.get(
-  "/companies/pending",
-  auth,
-  isAdmin,
-  adminController.getPendingCompanies,
-);
-router.get(
-  "/companies/verified",
-  auth,
-  isAdmin,
-  adminController.getVerifiedCompanies,
-);
-router.patch(
-  "/companies/:userId/verify",
-  auth,
-  isAdmin,
-  adminController.verifyCompany,
-);
-router.delete(
-  "/companies/:userId/reject",
-  auth,
-  isAdmin,
-  adminController.rejectCompany,
-);
+router.get("/dashboard/stats", auth, isAdmin, adminController.getDashboardStats);
+router.get("/analytics", auth, isAdmin, adminController.getAnalytics);
+router.get("/activity", auth, isAdmin, adminController.getRecentActivity);
+router.get("/export", auth, isAdmin, adminController.exportData);
+
+router.get("/companies/pending", auth, isAdmin, adminController.getPendingCompanies);
+router.get("/companies/verified", auth, isAdmin, adminController.getVerifiedCompanies);
+router.patch("/companies/:userId/verify", auth, isAdmin, adminController.verifyCompany);
+router.post("/companies/bulk-verify", auth, isAdmin, adminController.bulkVerifyCompanies);
+router.delete("/companies/:userId/reject", auth, isAdmin, adminController.rejectCompany);
 
 router.get("/deals", auth, isAdmin, adminController.getDeals);
 router.post("/deals", auth, isAdmin, adminController.createDeal);

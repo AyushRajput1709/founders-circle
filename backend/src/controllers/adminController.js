@@ -237,6 +237,233 @@ const deleteDeal = async (req, res) => {
   }
 };
 
+// Get analytics data for charts
+const getAnalytics = async (req, res) => {
+  try {
+    // User growth over last 7 days
+    const last7Days = new Date();
+    last7Days.setDate(last7Days.getDate() - 7);
+
+    const userGrowth = await User.aggregate([
+      { $match: { createdAt: { $gte: last7Days }, role: "founder" } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Claims over last 7 days
+    const claimsGrowth = await Claim.aggregate([
+      { $match: { createdAt: { $gte: last7Days } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Most popular deals (by claim count)
+    const popularDeals = await Claim.aggregate([
+      {
+        $group: {
+          _id: "$deal",
+          claimCount: { $sum: 1 },
+        },
+      },
+      { $sort: { claimCount: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: "deals",
+          localField: "_id",
+          foreignField: "_id",
+          as: "dealInfo",
+        },
+      },
+      { $unwind: "$dealInfo" },
+      {
+        $project: {
+          dealTitle: "$dealInfo.title",
+          claimCount: 1,
+          category: "$dealInfo.category",
+        },
+      },
+    ]);
+
+    // Deal performance by category
+    const categoryStats = await Deal.aggregate([
+      {
+        $lookup: {
+          from: "claims",
+          localField: "_id",
+          foreignField: "deal",
+          as: "claims",
+        },
+      },
+      {
+        $group: {
+          _id: "$category",
+          totalDeals: { $sum: 1 },
+          totalClaims: { $sum: { $size: "$claims" } },
+        },
+      },
+      {
+        $project: {
+          category: "$_id",
+          totalDeals: 1,
+          totalClaims: 1,
+          avgClaimsPerDeal: {
+            $cond: [
+              { $eq: ["$totalDeals", 0] },
+              0,
+              { $divide: ["$totalClaims", "$totalDeals"] },
+            ],
+          },
+        },
+      },
+    ]);
+
+    res.status(200).json({
+      userGrowth,
+      claimsGrowth,
+      popularDeals,
+      categoryStats,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch analytics", error: error.message });
+  }
+};
+
+// Get recent activity feed
+const getRecentActivity = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+
+    // Get recent users
+    const recentUsers = await User.find({ role: "founder" })
+      .select("name email company createdAt verified")
+      .sort({ createdAt: -1 })
+      .limit(limit / 2);
+
+    // Get recent claims
+    const recentClaims = await Claim.find()
+      .populate("user", "name email company")
+      .populate("deal", "title category")
+      .sort({ createdAt: -1 })
+      .limit(limit / 2);
+
+    // Combine and format activities
+    const activities = [
+      ...recentUsers.map((user) => ({
+        type: "registration",
+        user: { name: user.name, email: user.email, company: user.company },
+        verified: user.verified,
+        timestamp: user.createdAt,
+      })),
+      ...recentClaims.map((claim) => ({
+        type: "claim",
+        user: {
+          name: claim.user?.name,
+          email: claim.user?.email,
+          company: claim.user?.company,
+        },
+        deal: { title: claim.deal?.title, category: claim.deal?.category },
+        status: claim.status,
+        timestamp: claim.createdAt,
+      })),
+    ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    res.status(200).json({
+      activities: activities.slice(0, limit),
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch activity", error: error.message });
+  }
+};
+
+// Bulk verify companies
+const bulkVerifyCompanies = async (req, res) => {
+  try {
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: "No user IDs provided" });
+    }
+
+    const result = await User.updateMany(
+      { _id: { $in: userIds }, role: "founder" },
+      { verified: true },
+    );
+
+    res.status(200).json({
+      message: `${result.modifiedCount} companies verified successfully`,
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to bulk verify", error: error.message });
+  }
+};
+
+// Export data to CSV format
+const exportData = async (req, res) => {
+  try {
+    const { type } = req.query; // 'users' or 'deals' or 'claims'
+
+    let data;
+    let csvContent = "";
+
+    if (type === "users") {
+      data = await User.find({ role: "founder" })
+        .select("name email company verified createdAt")
+        .lean();
+      csvContent =
+        "Name,Email,Company,Verified,Registered Date\n" +
+        data
+          .map(
+            (u) =>
+              `"${u.name}","${u.email}","${u.company || ""}",${u.verified},${new Date(u.createdAt).toLocaleDateString()}`,
+          )
+          .join("\n");
+    } else if (type === "deals") {
+      data = await Deal.find().lean();
+      csvContent =
+        "Title,Category,Access Level,Partner,Created Date\n" +
+        data
+          .map(
+            (d) =>
+              `"${d.title}","${d.category}","${d.accessLevel}","${d.partnerName}",${new Date(d.createdAt).toLocaleDateString()}`,
+          )
+          .join("\n");
+    } else if (type === "claims") {
+      data = await Claim.find()
+        .populate("user", "name email company")
+        .populate("deal", "title category")
+        .lean();
+      csvContent =
+        "User Name,User Email,Deal Title,Deal Category,Status,Claimed Date\n" +
+        data
+          .map(
+            (c) =>
+              `"${c.user?.name}","${c.user?.email}","${c.deal?.title}","${c.deal?.category}","${c.status}",${new Date(c.createdAt).toLocaleDateString()}`,
+          )
+          .join("\n");
+    } else {
+      return res.status(400).json({ message: "Invalid export type" });
+    }
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${type}-export.csv"`);
+    res.status(200).send(csvContent);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to export data", error: error.message });
+  }
+};
+
 module.exports = {
   getPendingCompanies,
   getVerifiedCompanies,
@@ -247,4 +474,8 @@ module.exports = {
   createDeal,
   updateDeal,
   deleteDeal,
+  getAnalytics,
+  getRecentActivity,
+  bulkVerifyCompanies,
+  exportData,
 };
