@@ -51,6 +51,13 @@ export default function DashboardPage() {
 
       if (response.ok) {
         const data = await response.json();
+        
+        // Redirect admins to admin dashboard
+        if (data.user?.role === "admin") {
+          router.push("/admin");
+          return;
+        }
+        
         setUser(data.user);
       } else {
         localStorage.removeItem("token");

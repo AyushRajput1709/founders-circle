@@ -32,7 +32,13 @@ export default function LoginPage() {
 
       if (response.ok) {
         localStorage.setItem("token", data.token);
-        router.push("/dashboard");
+        
+        // Redirect based on user role
+        if (data.user?.role === "admin") {
+          router.push("/admin");
+        } else {
+          router.push("/dashboard");
+        }
       } else {
         setError(data.message || "Login failed. Please try again.");
       }

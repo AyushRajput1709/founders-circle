@@ -56,8 +56,36 @@ export default function EnhancedAdminDashboard() {
       return;
     }
     setToken(savedToken);
-    fetchData(savedToken);
+    verifyAdminAccess(savedToken);
   }, [router]);
+
+  const verifyAdminAccess = async (authToken: string) => {
+    try {
+      // First verify the user is an admin
+      const userRes = await fetch("http://localhost:5000/api/auth/me", {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      if (!userRes.ok) {
+        router.push("/login");
+        return;
+      }
+
+      const userData = await userRes.json();
+      
+      // Redirect non-admins to customer dashboard
+      if (userData.user?.role !== "admin") {
+        router.push("/dashboard");
+        return;
+      }
+
+      // If admin, fetch admin data
+      fetchData(authToken);
+    } catch (error) {
+      console.error("Failed to verify admin access:", error);
+      router.push("/login");
+    }
+  };
 
   const fetchData = async (authToken: string) => {
     try {
