@@ -16,9 +16,14 @@ This guide will walk you through deploying the Founders Circle platform to produ
 ```env
 # Production environment variables
 PORT=5000
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/startup-benefits
-JWT_SECRET=generate_a_strong_random_string_using_openssl_or_node
+MONGODB_URI=<your-mongodb-connection-string>
+JWT_SECRET=<generate-a-strong-random-string>
 NODE_ENV=production
+```
+
+**Example MongoDB URI format:**
+```
+mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<database-name>
 ```
 
 Generate a strong JWT secret:
